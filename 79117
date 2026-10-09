@@ -1,0 +1,8 @@
+# Turkeri International - Android app
+
+Native Kotlin WebView app wrapping https://turkeri-international.netlify.app
+Package: com.turkeri.international, minSdk 24, navy #0A1F44 + gold #D4AF37.
+
+Push to GitHub: Actions builds Turkeri-International-debug.apk (Actions artifact and the "latest-debug" Release).
+Local build: gradle assembleDebug (Gradle 8.7, JDK 17, Android SDK 34).
+Contact details are constants at the top of MainActivity.kt.
