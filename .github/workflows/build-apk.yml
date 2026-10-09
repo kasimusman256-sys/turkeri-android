@@ -13,6 +13,465 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Create Android project files
+        run: |
+          set -e
+          mkdir -p proj
+          cd proj
+          mkdir -p $(dirname app/build.gradle.kts)
+          cat > app/build.gradle.kts <<'EOF_TURKERI'
+          plugins {
+              id("com.android.application")
+              id("org.jetbrains.kotlin.android")
+          }
+
+          android {
+              namespace = "com.turkeri.international"
+              compileSdk = 34
+
+              defaultConfig {
+                  applicationId = "com.turkeri.international"
+                  minSdk = 26
+                  targetSdk = 34
+                  versionCode = 1
+                  versionName = "1.0.0"
+              }
+
+              buildTypes {
+                  debug { isMinifyEnabled = false }
+                  release { isMinifyEnabled = false }
+              }
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
+              }
+              kotlinOptions { jvmTarget = "17" }
+          }
+
+          dependencies {
+              implementation("androidx.core:core-ktx:1.13.1")
+              implementation("androidx.appcompat:appcompat:1.7.0")
+          }
+          EOF_TURKERI
+          mkdir -p $(dirname app/src/main/AndroidManifest.xml)
+          cat > app/src/main/AndroidManifest.xml <<'EOF_TURKERI'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+              <uses-permission android:name="android.permission.INTERNET" />
+              <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+              <queries>
+                  <intent><action android:name="android.intent.action.VIEW" /><data android:scheme="tel" /></intent>
+                  <intent><action android:name="android.intent.action.VIEW" /><data android:scheme="mailto" /></intent>
+                  <intent><action android:name="android.intent.action.VIEW" /><data android:scheme="geo" /></intent>
+                  <intent><action android:name="android.intent.action.VIEW" /><data android:scheme="https" /></intent>
+              </queries>
+
+              <application
+                  android:allowBackup="true"
+                  android:icon="@mipmap/ic_launcher"
+                  android:roundIcon="@mipmap/ic_launcher_round"
+                  android:label="@string/app_name"
+                  android:supportsRtl="true"
+                  android:usesCleartextTraffic="false"
+                  android:theme="@style/Theme.Turkeri">
+
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true"
+                      android:configChanges="orientation|screenSize|keyboardHidden|smallestScreenSize|screenLayout"
+                      android:windowSoftInputMode="adjustResize">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF_TURKERI
+          mkdir -p $(dirname app/src/main/java/com/turkeri/international/MainActivity.kt)
+          cat > app/src/main/java/com/turkeri/international/MainActivity.kt <<'EOF_TURKERI'
+          package com.turkeri.international
+
+          import android.content.ActivityNotFoundException
+          import android.content.Context
+          import android.content.Intent
+          import android.graphics.Bitmap
+          import android.net.ConnectivityManager
+          import android.net.NetworkCapabilities
+          import android.net.Uri
+          import android.os.Bundle
+          import android.view.Menu
+          import android.view.MenuItem
+          import android.view.View
+          import android.webkit.WebChromeClient
+          import android.webkit.WebResourceError
+          import android.webkit.WebResourceRequest
+          import android.webkit.WebView
+          import android.webkit.WebViewClient
+          import android.widget.Button
+          import android.widget.ProgressBar
+          import android.widget.Toast
+          import androidx.activity.OnBackPressedCallback
+          import androidx.appcompat.app.AppCompatActivity
+
+          class MainActivity : AppCompatActivity() {
+
+              companion object {
+                  private const val HOME_URL = "https://turkeri-international.netlify.app"
+                  private const val SITE_HOST = "turkeri-international.netlify.app"
+
+                  // Business contact details
+                  private const val PHONE_1 = "08035124248"
+                  private const val PHONE_2 = "08118206328"
+                  // WhatsApp number used by the website exchange form (international format, no +)
+                  private const val WHATSAPP_NUMBER = "2348035124248"
+                  private const val EMAIL = "Turkeriinternational@gmail.com"
+                  private const val ADDRESS =
+                      "Suite 12 Sahad Plaza, Addis-Ababa Crescent, Wuse Zone 4, Abuja, FCT, Nigeria"
+              }
+
+              private lateinit var webView: WebView
+              private lateinit var progressBar: ProgressBar
+              private lateinit var errorView: View
+
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  setContentView(R.layout.activity_main)
+
+                  webView = findViewById(R.id.webView)
+                  progressBar = findViewById(R.id.progressBar)
+                  errorView = findViewById(R.id.errorView)
+                  findViewById<Button>(R.id.retryButton).setOnClickListener { loadHome() }
+
+                  setupWebView()
+
+                  onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+                      override fun handleOnBackPressed() {
+                          if (errorView.visibility != View.VISIBLE && webView.canGoBack()) {
+                              webView.goBack()
+                          } else {
+                              finish()
+                          }
+                      }
+                  })
+
+                  if (savedInstanceState != null) {
+                      webView.restoreState(savedInstanceState)
+                  } else {
+                      loadHome()
+                  }
+              }
+
+              private fun setupWebView() {
+                  webView.settings.apply {
+                      javaScriptEnabled = true
+                      domStorageEnabled = true
+                      loadWithOverviewMode = true
+                      useWideViewPort = true
+                      setSupportZoom(false)
+                      builtInZoomControls = false
+                  }
+
+                  webView.webChromeClient = object : WebChromeClient() {
+                      override fun onProgressChanged(view: WebView?, newProgress: Int) {
+                          progressBar.progress = newProgress
+                          progressBar.visibility = if (newProgress in 0..99) View.VISIBLE else View.GONE
+                      }
+                  }
+
+                  webView.webViewClient = object : WebViewClient() {
+                      override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                          return handleUrl(request.url)
+                      }
+
+                      override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
+                          progressBar.visibility = View.VISIBLE
+                      }
+
+                      override fun onPageFinished(view: WebView?, url: String?) {
+                          progressBar.visibility = View.GONE
+                      }
+
+                      override fun onReceivedError(
+                          view: WebView, request: WebResourceRequest, error: WebResourceError
+                      ) {
+                          if (request.isForMainFrame) showError()
+                      }
+                  }
+              }
+
+              /** Returns true if the URL was handled outside the WebView. */
+              private fun handleUrl(uri: Uri): Boolean {
+                  val scheme = uri.scheme?.lowercase() ?: return false
+                  if ((scheme == "http" || scheme == "https") && uri.host == SITE_HOST) {
+                      return false
+                  }
+                  openExternal(uri)
+                  return true
+              }
+
+              private fun openExternal(uri: Uri) {
+                  try {
+                      if (uri.scheme == "intent") {
+                          startActivity(Intent.parseUri(uri.toString(), Intent.URI_INTENT_SCHEME))
+                      } else {
+                          startActivity(Intent(Intent.ACTION_VIEW, uri))
+                      }
+                  } catch (e: ActivityNotFoundException) {
+                      toast(getString(R.string.no_app_found))
+                  } catch (e: Exception) {
+                      toast(getString(R.string.no_app_found))
+                  }
+              }
+
+              private fun loadHome() {
+                  errorView.visibility = View.GONE
+                  if (!isOnline()) {
+                      showError()
+                      return
+                  }
+                  webView.visibility = View.VISIBLE
+                  webView.loadUrl(HOME_URL)
+              }
+
+              private fun showError() {
+                  progressBar.visibility = View.GONE
+                  webView.visibility = View.INVISIBLE
+                  errorView.visibility = View.VISIBLE
+              }
+
+              private fun isOnline(): Boolean {
+                  val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+                  val network = cm.activeNetwork ?: return false
+                  val caps = cm.getNetworkCapabilities(network) ?: return false
+                  return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+              }
+
+              override fun onCreateOptionsMenu(menu: Menu): Boolean {
+                  menuInflater.inflate(R.menu.main_menu, menu)
+                  menu.findItem(R.id.action_call_1).title = getString(R.string.call_number, PHONE_1)
+                  menu.findItem(R.id.action_call_2).title = getString(R.string.call_number, PHONE_2)
+                  return true
+              }
+
+              override fun onOptionsItemSelected(item: MenuItem): Boolean {
+                  when (item.itemId) {
+                      R.id.action_home -> loadHome()
+                      R.id.action_refresh ->
+                          if (errorView.visibility == View.VISIBLE) loadHome() else webView.reload()
+                      R.id.action_call_1 -> openExternal(Uri.parse("tel:$PHONE_1"))
+                      R.id.action_call_2 -> openExternal(Uri.parse("tel:$PHONE_2"))
+                      R.id.action_whatsapp -> openExternal(
+                          Uri.parse(
+                              "https://wa.me/$WHATSAPP_NUMBER?text=" +
+                                  Uri.encode("Hello Turkeri, I would like to make an enquiry.")
+                          )
+                      )
+                      R.id.action_email -> openExternal(Uri.parse("mailto:$EMAIL"))
+                      R.id.action_directions -> openExternal(
+                          Uri.parse("https://www.google.com/maps/search/?api=1&query=" + Uri.encode(ADDRESS))
+                      )
+                      else -> return super.onOptionsItemSelected(item)
+                  }
+                  return true
+              }
+
+              override fun onSaveInstanceState(outState: Bundle) {
+                  super.onSaveInstanceState(outState)
+                  webView.saveState(outState)
+              }
+
+              override fun onDestroy() {
+                  webView.destroy()
+                  super.onDestroy()
+              }
+
+              private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+          }
+          EOF_TURKERI
+          mkdir -p $(dirname app/src/main/res/drawable/ic_launcher_background.xml)
+          cat > app/src/main/res/drawable/ic_launcher_background.xml <<'EOF_TURKERI'
+          <?xml version="1.0" encoding="utf-8"?>
+          <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+              <solid android:color="#0A1F44" />
+          </shape>
+          EOF_TURKERI
+          mkdir -p $(dirname app/src/main/res/drawable/ic_launcher_foreground.xml)
+          cat > app/src/main/res/drawable/ic_launcher_foreground.xml <<'EOF_TURKERI'
+          <?xml version="1.0" encoding="utf-8"?>
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="108dp"
+              android:height="108dp"
+              android:viewportWidth="108"
+              android:viewportHeight="108">
+              <path
+                  android:pathData="M54,30 a24,24 0 1,1 0,48 a24,24 0 1,1 0,-48"
+                  android:strokeColor="#D4AF37"
+                  android:strokeWidth="3"
+                  android:fillColor="#00000000" />
+              <path
+                  android:fillColor="#D4AF37"
+                  android:pathData="M41,43 L67,43 L67,49 L57,49 L57,70 L51,70 L51,49 L41,49 Z" />
+          </vector>
+          EOF_TURKERI
+          mkdir -p $(dirname app/src/main/res/layout/activity_main.xml)
+          cat > app/src/main/res/layout/activity_main.xml <<'EOF_TURKERI'
+          <?xml version="1.0" encoding="utf-8"?>
+          <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+              android:layout_width="match_parent"
+              android:layout_height="match_parent"
+              android:background="@color/white">
+
+              <WebView
+                  android:id="@+id/webView"
+                  android:layout_width="match_parent"
+                  android:layout_height="match_parent" />
+
+              <ProgressBar
+                  android:id="@+id/progressBar"
+                  style="?android:attr/progressBarStyleHorizontal"
+                  android:layout_width="match_parent"
+                  android:layout_height="4dp"
+                  android:max="100"
+                  android:progressTint="@color/gold"
+                  android:progressBackgroundTint="@color/navy" />
+
+              <LinearLayout
+                  android:id="@+id/errorView"
+                  android:layout_width="match_parent"
+                  android:layout_height="match_parent"
+                  android:background="@color/navy"
+                  android:gravity="center"
+                  android:orientation="vertical"
+                  android:padding="32dp"
+                  android:visibility="gone">
+
+                  <TextView
+                      android:layout_width="wrap_content"
+                      android:layout_height="wrap_content"
+                      android:text="@string/error_title"
+                      android:textColor="@color/gold"
+                      android:textSize="22sp"
+                      android:textStyle="bold" />
+
+                  <TextView
+                      android:layout_width="wrap_content"
+                      android:layout_height="wrap_content"
+                      android:layout_marginTop="12dp"
+                      android:gravity="center"
+                      android:text="@string/error_message"
+                      android:textColor="@color/white"
+                      android:textSize="16sp" />
+
+                  <Button
+                      android:id="@+id/retryButton"
+                      android:layout_width="wrap_content"
+                      android:layout_height="wrap_content"
+                      android:layout_marginTop="24dp"
+                      android:backgroundTint="@color/gold"
+                      android:text="@string/retry"
+                      android:textColor="@color/navy" />
+              </LinearLayout>
+          </FrameLayout>
+          EOF_TURKERI
+          mkdir -p $(dirname app/src/main/res/menu/main_menu.xml)
+          cat > app/src/main/res/menu/main_menu.xml <<'EOF_TURKERI'
+          <?xml version="1.0" encoding="utf-8"?>
+          <menu xmlns:android="http://schemas.android.com/apk/res/android">
+              <item android:id="@+id/action_home" android:title="@string/menu_home" android:showAsAction="never" />
+              <item android:id="@+id/action_refresh" android:title="@string/menu_refresh" android:showAsAction="never" />
+              <item android:id="@+id/action_call_1" android:title="Call" android:showAsAction="never" />
+              <item android:id="@+id/action_call_2" android:title="Call" android:showAsAction="never" />
+              <item android:id="@+id/action_whatsapp" android:title="@string/menu_whatsapp" android:showAsAction="never" />
+              <item android:id="@+id/action_email" android:title="@string/menu_email" android:showAsAction="never" />
+              <item android:id="@+id/action_directions" android:title="@string/menu_directions" android:showAsAction="never" />
+          </menu>
+          EOF_TURKERI
+          mkdir -p $(dirname app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml)
+          cat > app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml <<'EOF_TURKERI'
+          <?xml version="1.0" encoding="utf-8"?>
+          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+              <background android:drawable="@drawable/ic_launcher_background" />
+              <foreground android:drawable="@drawable/ic_launcher_foreground" />
+          </adaptive-icon>
+          EOF_TURKERI
+          mkdir -p $(dirname app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml)
+          cat > app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml <<'EOF_TURKERI'
+          <?xml version="1.0" encoding="utf-8"?>
+          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+              <background android:drawable="@drawable/ic_launcher_background" />
+              <foreground android:drawable="@drawable/ic_launcher_foreground" />
+          </adaptive-icon>
+          EOF_TURKERI
+          mkdir -p $(dirname app/src/main/res/values/colors.xml)
+          cat > app/src/main/res/values/colors.xml <<'EOF_TURKERI'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <color name="navy">#0A1F44</color>
+              <color name="navy_dark">#06142D</color>
+              <color name="gold">#D4AF37</color>
+              <color name="white">#FFFFFF</color>
+          </resources>
+          EOF_TURKERI
+          mkdir -p $(dirname app/src/main/res/values/strings.xml)
+          cat > app/src/main/res/values/strings.xml <<'EOF_TURKERI'
+          <resources>
+              <string name="app_name">Turkeri International</string>
+              <string name="error_title">No connection</string>
+              <string name="error_message">We could not load Turkeri International. Check your internet connection and try again.</string>
+              <string name="retry">Try again</string>
+              <string name="no_app_found">No app found to open this link</string>
+              <string name="call_number">Call %1$s</string>
+              <string name="menu_home">Home</string>
+              <string name="menu_refresh">Refresh</string>
+              <string name="menu_whatsapp">Chat on WhatsApp</string>
+              <string name="menu_email">Send email</string>
+              <string name="menu_directions">Directions to our office</string>
+          </resources>
+          EOF_TURKERI
+          mkdir -p $(dirname app/src/main/res/values/themes.xml)
+          cat > app/src/main/res/values/themes.xml <<'EOF_TURKERI'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <style name="Theme.Turkeri" parent="Theme.AppCompat.Light.DarkActionBar">
+                  <item name="colorPrimary">@color/navy</item>
+                  <item name="colorPrimaryDark">@color/navy_dark</item>
+                  <item name="colorAccent">@color/gold</item>
+                  <item name="android:statusBarColor">@color/navy_dark</item>
+                  <item name="android:navigationBarColor">@color/navy</item>
+                  <item name="android:windowBackground">@color/navy</item>
+              </style>
+          </resources>
+          EOF_TURKERI
+          mkdir -p $(dirname build.gradle.kts)
+          cat > build.gradle.kts <<'EOF_TURKERI'
+          plugins {
+              id("com.android.application") version "8.5.2" apply false
+              id("org.jetbrains.kotlin.android") version "1.9.24" apply false
+          }
+          EOF_TURKERI
+          mkdir -p $(dirname gradle.properties)
+          cat > gradle.properties <<'EOF_TURKERI'
+          org.gradle.jvmargs=-Xmx2g -Dfile.encoding=UTF-8
+          android.useAndroidX=true
+          android.nonTransitiveRClass=true
+          kotlin.code.style=official
+          EOF_TURKERI
+          mkdir -p $(dirname settings.gradle.kts)
+          cat > settings.gradle.kts <<'EOF_TURKERI'
+          pluginManagement {
+              repositories { google(); mavenCentral(); gradlePluginPortal() }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories { google(); mavenCentral() }
+          }
+          rootProject.name = "TurkeriInternational"
+          include(":app")
+          EOF_TURKERI
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -23,10 +482,11 @@ jobs:
           gradle-version: 8.7
 
       - name: Build debug APK
+        working-directory: proj
         run: gradle assembleDebug --stacktrace
 
       - name: Rename APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk Turkeri-International-debug.apk
+        run: cp proj/app/build/outputs/apk/debug/app-debug.apk Turkeri-International-debug.apk
 
       - uses: actions/upload-artifact@v4
         with:
