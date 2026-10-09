@@ -165,6 +165,7 @@ jobs:
               }
 
               private fun setupWebView() {
+                  webView.setBackgroundColor(0)
                   webView.settings.apply {
                       javaScriptEnabled = true
                       domStorageEnabled = true
@@ -298,23 +299,15 @@ jobs:
               <solid android:color="#0A1F44" />
           </shape>
           EOF_TURKERI
-          mkdir -p $(dirname app/src/main/res/drawable/ic_launcher_foreground.xml)
-          cat > app/src/main/res/drawable/ic_launcher_foreground.xml <<'EOF_TURKERI'
+          mkdir -p $(dirname app/src/main/res/drawable/splash_background.xml)
+          cat > app/src/main/res/drawable/splash_background.xml <<'EOF_TURKERI'
           <?xml version="1.0" encoding="utf-8"?>
-          <vector xmlns:android="http://schemas.android.com/apk/res/android"
-              android:width="108dp"
-              android:height="108dp"
-              android:viewportWidth="108"
-              android:viewportHeight="108">
-              <path
-                  android:pathData="M54,30 a24,24 0 1,1 0,48 a24,24 0 1,1 0,-48"
-                  android:strokeColor="#D4AF37"
-                  android:strokeWidth="3"
-                  android:fillColor="#00000000" />
-              <path
-                  android:fillColor="#D4AF37"
-                  android:pathData="M41,43 L67,43 L67,49 L57,49 L57,70 L51,70 L51,49 L41,49 Z" />
-          </vector>
+          <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+              <item android:drawable="@color/navy" />
+              <item>
+                  <bitmap android:src="@drawable/splash_logo" android:gravity="center" />
+              </item>
+          </layer-list>
           EOF_TURKERI
           mkdir -p $(dirname app/src/main/res/layout/activity_main.xml)
           cat > app/src/main/res/layout/activity_main.xml <<'EOF_TURKERI'
@@ -322,7 +315,7 @@ jobs:
           <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
               android:layout_width="match_parent"
               android:layout_height="match_parent"
-              android:background="@color/white">
+              android:background="@drawable/splash_background">
 
               <WebView
                   android:id="@+id/webView"
@@ -441,7 +434,7 @@ jobs:
                   <item name="colorAccent">@color/gold</item>
                   <item name="android:statusBarColor">@color/navy_dark</item>
                   <item name="android:navigationBarColor">@color/navy</item>
-                  <item name="android:windowBackground">@color/navy</item>
+                  <item name="android:windowBackground">@drawable/splash_background</item>
               </style>
           </resources>
           EOF_TURKERI
@@ -472,6 +465,12 @@ jobs:
           include(":app")
           EOF_TURKERI
 
+      - name: Add logo images
+        run: |
+          set -e
+          mkdir -p proj/app/src/main/res/drawable-nodpi
+          cp ic_launcher_foreground.png splash_logo.png proj/app/src/main/res/drawable-nodpi/
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -481,26 +480,31 @@ jobs:
         with:
           gradle-version: 8.7
 
-      - name: Build debug APK
+      - name: Build release APK (unsigned)
         working-directory: proj
-        run: gradle assembleDebug --stacktrace
+        run: gradle assembleRelease --stacktrace
 
-      - name: Rename APK
-        run: cp proj/app/build/outputs/apk/debug/app-debug.apk Turkeri-International-debug.apk
+      - name: Align and sign APK
+        run: |
+          set -e
+          BT=$(ls -d $ANDROID_HOME/build-tools/* | sort -V | tail -1)
+          UNSIGNED=$(ls proj/app/build/outputs/apk/release/*.apk | head -1)
+          $BT/zipalign -p -f 4 "$UNSIGNED" aligned.apk
+          $BT/apksigner sign --ks turkeri-app.p12 --ks-key-alias turkeri --ks-pass pass:TurkeriApp2026Key --key-pass pass:TurkeriApp2026Key --out Turkeri-International.apk aligned.apk
+          $BT/apksigner verify --verbose Turkeri-International.apk
 
       - uses: actions/upload-artifact@v4
         with:
           name: Turkeri-International-APK
-          path: Turkeri-International-debug.apk
+          path: Turkeri-International.apk
           if-no-files-found: error
 
       - name: Publish APK to a GitHub Release
-        if: github.event_name == 'push'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: latest-debug
-          name: Turkeri International (debug APK)
-          files: Turkeri-International-debug.apk
-          prerelease: true
+          tag_name: release
+          name: Turkeri International
+          files: Turkeri-International.apk
+          prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
